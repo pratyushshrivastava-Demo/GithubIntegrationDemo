@@ -1,0 +1,6 @@
+{
+  "Name": "GitHubIntegrationProject",
+  "ProjectType": "Tests",
+  "Description": "GithubIntegration Project for Demo",
+  "MainFile": "Main.xaml"
+}
