@@ -1,0 +1,84 @@
+name: UiPathRunTests
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # Checkout repository
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Install .NET 6 runtime (required for UiPath CLI)
+      - name: Install .NET 8 Runtime
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Verify installed .NET runtimes
+      - name: Verify .NET version
+        shell: pwsh
+        run: dotnet --list-runtimes
+
+      # Print workspace info
+      - name: Print Working Directory
+        shell: pwsh
+        run: |
+          Get-Location
+          Get-ChildItem
+
+      # Download and extract UiPath CLI
+      - name: Get UiPath CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path C:\uipathcli -Force
+          Invoke-WebRequest `
+            -Uri "https://uipath.pkgs.visualstudio.com/Public.Feeds/_packaging/UiPath-Official/nuget/v3/flat2/UiPath.CLI.Windows/25.10.5/UiPath.CLI.Windows.25.10.5.nupkg" `
+            -OutFile "C:\UiPath.CLI.Windows.zip"
+          Expand-Archive `
+            -Path "C:\UiPath.CLI.Windows.zip" `
+            -DestinationPath "C:\uipathcli" `
+            -Force
+
+      # Pack UiPath project
+      - name: Pack UiPath project
+        shell: pwsh
+        run: |
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE "Output"
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+          $uipcliDll = "C:\uipathcli\tools\net8.0\any\uipcli.dll"
+          if (-not (Test-Path $uipcliDll)) {
+            throw "UiPath CLI DLL not found at: $uipcliDll"
+          }
+
+          & dotnet $uipcliDll package pack `
+            "$env:GITHUB_WORKSPACE\project.json" `
+            --output "$outputDir" `
+            --autoVersion
+
+      # Deploy UiPath package
+      - name: Deploy UiPath package
+        shell: pwsh
+        run: |
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE "Output"
+
+          $uipcliDll = "C:\uipathcli\tools\net8.0\any\uipcli.dll"
+          if (-not (Test-Path $uipcliDll)) {
+            throw "UiPath CLI DLL not found at: $uipcliDll"
+          }
+
+          & dotnet $uipcliDll package deploy `
+            "$outputDir" `
+            "https://staging.uipath.com" `
+            "${{ secrets.TENANT_NAME }}" `
+            -A "${{ secrets.ACCOUNT_NAME }}" `
+            -I "${{ secrets.OAUTH_CLIENTID }}" `
+            -S "${{ secrets.OAUTH_CLIENT_SECRET }}" `
+            -o "${{ secrets.ORCH_FOLDER }}" `
+            --applicationScope "OR.Assets OR.BackgroundTasks OR.Execution OR.Folders OR.Jobs OR.Machines.Read OR.Monitoring OR.Robots.Read OR.Settings.Read"
